@@ -219,7 +219,7 @@ public class ProcedureManager extends Observable<ProcedureManager.Observer> {
     }
 
     /**
-     * Queries whether a procedure block contains a matching registered definition block. Similar
+     * Queries whether a procedure block contains a matching registered definition block. Similiar
      * to {@link #isProcedureDefined(String)}, except it takes in a procedure block. If the block is
      * a procedure definition, it ensures the block is the same registered definition block.
      *
