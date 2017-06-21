@@ -63,6 +63,8 @@ public class BlocklyControllerTest extends BlocklyTestCase {
     Workspace mWorkspace;
     WorkspaceHelper mHelper;
     ConnectionManager mConnectionManager;
+    ProcedureManager mProcedureManager;
+    VariableNameManager mVariableManager;
     WorkspaceView mWorkspaceView;
 
     List<BlocklyEvent> mEventsFired = new ArrayList<>();
@@ -94,6 +96,7 @@ public class BlocklyControllerTest extends BlocklyTestCase {
         mController = new BlocklyController.Builder(mMockContext)
                 .setWorkspaceHelper(mHelper)
                 .setBlockViewFactory(mViewFactory)
+                .addBlockDefinitionsFromAsset("default/procedures.json")
                 .addBlockDefinitionsFromAsset("default/test_blocks.json")
                 .build();
         mController.addCallback(mCallback);
@@ -101,6 +104,8 @@ public class BlocklyControllerTest extends BlocklyTestCase {
         mBlockFactory = mController.getBlockFactory();
         mWorkspace = mController.getWorkspace();
         mConnectionManager = mController.getWorkspace().getConnectionManager();
+        mProcedureManager = mWorkspace.getProcedureManager();
+        mVariableManager = mWorkspace.getVariableNameManager();
 
         mWorkspaceView = new WorkspaceView(getContext());
     }
@@ -1658,7 +1663,7 @@ public class BlocklyControllerTest extends BlocklyTestCase {
     public void testTrashAllBlocksSetsWorkspaceId() throws BlockLoadingException {
         // given
         final Block block = mBlockFactory.obtainBlockFrom(
-            new BlockTemplate().ofType("simple_input_output").withId("connectTarget"));
+            new BlockTemplate().ofType("simple_input_output"));
         final String expectedWorkspaceId = BlocklyEvent.WORKSPACE_ID_TRASH;
 
         runAndSync(new Runnable() {
@@ -1678,7 +1683,7 @@ public class BlocklyControllerTest extends BlocklyTestCase {
     public void testRemoveBlockTreeSetsWorkspaceId() throws BlockLoadingException {
         // given
         final Block block = mBlockFactory.obtainBlockFrom(
-            new BlockTemplate().ofType("simple_input_output").withId("connectTarget"));
+            new BlockTemplate().ofType("simple_input_output"));
 
         // when
         runAndSync(new Runnable() {
@@ -1690,6 +1695,53 @@ public class BlocklyControllerTest extends BlocklyTestCase {
                 // then
                 assertThat(block.getEventWorkspaceId()).isNull();
            }
+        });
+    }
+
+    @Test
+    public void testRemoveProcedureDefinitionBlockWithoutReturn() throws BlockLoadingException {
+        // given
+        final String procName = "my procedure";
+        final String mutation = "<mutation name=\"" + procName + "\"/>";
+        final Block defStatementBlock = mBlockFactory.obtainBlockFrom(
+                new BlockTemplate().ofType("procedures_defnoreturn").withMutation(mutation));
+
+        final Block statementBlock1 = mBlockFactory.obtainBlockFrom(
+                new BlockTemplate().ofType("procedures_callnoreturn").withMutation(mutation));
+
+        final Block before = mBlockFactory.obtainBlockFrom(
+                new BlockTemplate().ofType("statement_no_input").withId("before"));
+        final Block statementBlock2 = mBlockFactory.obtainBlockFrom(
+                new BlockTemplate().ofType("procedures_callnoreturn").withMutation(mutation));
+        final Block after = mBlockFactory.obtainBlockFrom(
+                new BlockTemplate().ofType("statement_no_input").withId("after"));
+        before.getNextConnection().connect(statementBlock2.getPreviousConnection());
+        after.getParentConnection().connect(statementBlock2.getNextConnection());
+
+        // when
+        runAndSync(new Runnable() {
+            @Override
+            public void run() {
+                mController.addRootBlock(defStatementBlock);
+                mController.addRootBlock(statementBlock1);
+                mController.addRootBlock(before);
+
+                assertThat(mWorkspace.getRootBlocks()).hasSize(3);
+                assertThat(mProcedureManager.isProcedureDefined(procName));
+                assertThat(mProcedureManager.isDefinitionReferenced(defStatementBlock));
+
+                mController.removeBlockTree(defStatementBlock);
+                // TODO
+                assertThat(mWorkspace.getRootBlocks()).contains(before);
+                assertThat(mWorkspace.getRootBlocks()).doesNotContain(defStatementBlock);
+                assertThat(mWorkspace.getRootBlocks()).doesNotContain(statementBlock1);
+                assertThat(mWorkspace.getRootBlocks()).doesNotContain(statementBlock2);
+                assertThat(mWorkspace.getRootBlocks()).hasSize(1);
+                assertThat(defStatementBlock.getEventWorkspaceId()).isNotEqualTo(mWorkspace.getId());
+                assertThat(statementBlock1.getEventWorkspaceId()).isNotEqualTo(mWorkspace.getId());
+                assertThat(statementBlock2.getEventWorkspaceId()).isNotEqualTo(mWorkspace.getId());
+                assertThat(before.getNextConnection().getTargetBlock()).isEqualTo(after);
+            }
         });
     }
 
