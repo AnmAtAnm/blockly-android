@@ -19,6 +19,7 @@ import android.content.Context;
 import android.support.test.InstrumentationRegistry;
 
 import com.google.blockly.android.BlocklyTestCase;
+import com.google.blockly.android.TestUtils;
 import com.google.blockly.android.testui.TestableBlockGroup;
 import com.google.blockly.android.testui.TestableBlockViewFactory;
 import com.google.blockly.android.ui.AbstractBlockView;
@@ -33,6 +34,7 @@ import com.google.blockly.model.BlockTemplate;
 import com.google.blockly.model.BlockTestStrings;
 import com.google.blockly.model.BlocklyEvent;
 import com.google.blockly.model.Connection;
+import com.google.blockly.model.DefaultBlocks;
 import com.google.blockly.model.FieldVariable;
 import com.google.blockly.model.VariableInfo;
 import com.google.blockly.model.Workspace;
@@ -96,9 +98,9 @@ public class BlocklyControllerTest extends BlocklyTestCase {
         mController = new BlocklyController.Builder(mMockContext)
                 .setWorkspaceHelper(mHelper)
                 .setBlockViewFactory(mViewFactory)
-                .addBlockDefinitionsFromAsset("default/procedures.json")
                 .addBlockDefinitionsFromAsset("default/test_blocks.json")
                 .build();
+        TestUtils.loadProcedureBlocks(mController);
         mController.addCallback(mCallback);
         mController.setVariableCallback(mVariableCallback);
         mBlockFactory = mController.getBlockFactory();
@@ -1700,47 +1702,53 @@ public class BlocklyControllerTest extends BlocklyTestCase {
 
     @Test
     public void testRemoveProcedureDefinitionBlockWithoutReturn() throws BlockLoadingException {
-        // given
-        final String procName = "my procedure";
-        final String mutation = "<mutation name=\"" + procName + "\"/>";
-        final Block defStatementBlock = mBlockFactory.obtainBlockFrom(
-                new BlockTemplate().ofType("procedures_defnoreturn").withMutation(mutation));
-
-        final Block statementBlock1 = mBlockFactory.obtainBlockFrom(
-                new BlockTemplate().ofType("procedures_callnoreturn").withMutation(mutation));
-
-        final Block before = mBlockFactory.obtainBlockFrom(
-                new BlockTemplate().ofType("statement_no_input").withId("before"));
-        final Block statementBlock2 = mBlockFactory.obtainBlockFrom(
-                new BlockTemplate().ofType("procedures_callnoreturn").withMutation(mutation));
-        final Block after = mBlockFactory.obtainBlockFrom(
-                new BlockTemplate().ofType("statement_no_input").withId("after"));
-        before.getNextConnection().connect(statementBlock2.getPreviousConnection());
-        after.getParentConnection().connect(statementBlock2.getNextConnection());
-
-        // when
         runAndSync(new Runnable() {
             @Override
             public void run() {
-                mController.addRootBlock(defStatementBlock);
-                mController.addRootBlock(statementBlock1);
-                mController.addRootBlock(before);
+                try {
+                    // given
+                    final String procName = "my procedure";
+                    final String mutation = "<mutation name=\"" + procName + "\"/>";
+                    final Block defStatementBlock = mBlockFactory.obtainBlockFrom(
+                            new BlockTemplate().ofType("procedures_defnoreturn")
+                                    .withMutation(mutation).withId("def "+procName));
 
-                assertThat(mWorkspace.getRootBlocks()).hasSize(3);
-                assertThat(mProcedureManager.isProcedureDefined(procName));
-                assertThat(mProcedureManager.isDefinitionReferenced(defStatementBlock));
+                    final Block fnCall1 = mBlockFactory.obtainBlockFrom(
+                            new BlockTemplate().ofType("procedures_callnoreturn")
+                                    .withMutation(mutation).withId("fnCall1"));
 
-                mController.removeBlockTree(defStatementBlock);
-                // TODO
-                assertThat(mWorkspace.getRootBlocks()).contains(before);
-                assertThat(mWorkspace.getRootBlocks()).doesNotContain(defStatementBlock);
-                assertThat(mWorkspace.getRootBlocks()).doesNotContain(statementBlock1);
-                assertThat(mWorkspace.getRootBlocks()).doesNotContain(statementBlock2);
-                assertThat(mWorkspace.getRootBlocks()).hasSize(1);
-                assertThat(defStatementBlock.getEventWorkspaceId()).isNotEqualTo(mWorkspace.getId());
-                assertThat(statementBlock1.getEventWorkspaceId()).isNotEqualTo(mWorkspace.getId());
-                assertThat(statementBlock2.getEventWorkspaceId()).isNotEqualTo(mWorkspace.getId());
-                assertThat(before.getNextConnection().getTargetBlock()).isEqualTo(after);
+                    final Block beforeFnCall2 = mBlockFactory.obtainBlockFrom(
+                            new BlockTemplate().ofType("statement_no_input").withId("before"));
+                    final Block fnCall2 = mBlockFactory.obtainBlockFrom(
+                            new BlockTemplate().ofType("procedures_callnoreturn")
+                                    .withMutation(mutation).withId("fnCall2"));
+                    final Block afterFnCall2 = mBlockFactory.obtainBlockFrom(
+                            new BlockTemplate().ofType("statement_no_input").withId("after"));
+                    beforeFnCall2.getNextConnection().connect(fnCall2.getPreviousConnection());
+                    afterFnCall2.getPreviousConnection().connect(fnCall2.getNextConnection());
+
+                    mController.addRootBlock(defStatementBlock);
+                    mController.addRootBlock(fnCall1);
+                    mController.addRootBlock(beforeFnCall2);
+
+                    assertThat(mWorkspace.getRootBlocks()).hasSize(3);
+                    assertThat(mProcedureManager.isProcedureDefined(procName));
+                    assertThat(mProcedureManager.isDefinitionReferenced(defStatementBlock));
+
+                    mController.removeBlockTree(defStatementBlock);
+                    // TODO
+                    assertThat(mWorkspace.getRootBlocks()).contains(beforeFnCall2);
+                    assertThat(mWorkspace.getRootBlocks()).doesNotContain(defStatementBlock);
+                    assertThat(mWorkspace.getRootBlocks()).doesNotContain(fnCall1);
+                    assertThat(mWorkspace.getRootBlocks()).doesNotContain(fnCall2);
+                    assertThat(mWorkspace.getRootBlocks()).hasSize(1);
+                    assertThat(defStatementBlock.getEventWorkspaceId()).isNotEqualTo(mWorkspace.getId());
+                    assertThat(fnCall1.getEventWorkspaceId()).isNotEqualTo(mWorkspace.getId());
+                    assertThat(fnCall2.getEventWorkspaceId()).isNotEqualTo(mWorkspace.getId());
+                    assertThat(beforeFnCall2.getNextConnection().getTargetBlock()).isEqualTo(afterFnCall2);
+                } catch (BlockLoadingException e) {
+                    throw new IllegalStateException(e);
+                }
             }
         });
     }
