@@ -932,7 +932,7 @@ public class BlocklyController {
             return false;
         }
 
-        boolean rootFoundAndRemoved = removeRootBlockImpl(block, true);
+        boolean rootFoundAndRemoved = !removeRootBlockImpl(block, true).isEmpty();
         if (rootFoundAndRemoved) {
             mWorkspace.addBlockToTrash(block);
             unlinkViews(block);
@@ -1301,16 +1301,17 @@ public class BlocklyController {
      * </ol>
      *
      * @param block The {@link Block} to look up and remove.
-     * @return True if the block was removed, false if it wasn't found.
+     * @return A list of all removed blocks that either have no parent (i.e., root blocks) or whose
+     *         parents were not removed. Possibly empty if {@code block} is not a root block.
      */
-    private boolean removeBlockAndInputBlocksImpl(Block block) {
+    private List<Block> removeBlockAndInputBlocksImpl(Block block) {
         extractBlockAsRootImpl(block, true);
-        boolean result = removeRootBlockImpl(block, true);
-        unlinkViews(block);
-        if (result) {
-            addPendingEvent(new BlocklyEvent.DeleteEvent(getWorkspace().getId(), block));
+        List<Block> removedParents = removeRootBlockImpl(block, true);
+        for (Block removedParent : removedParents) {
+            unlinkViews(removedParent);
+            addPendingEvent(new BlocklyEvent.DeleteEvent(getWorkspace().getId(), removedParent));
         }
-        return true;
+        return removedParents;
     }
 
     /**
@@ -1322,14 +1323,17 @@ public class BlocklyController {
      * connections, function definition, function and variable references. This should only be used
      * if the block will be immediately re-added to the model view {@link #addRootBlock} with
      * {@code isNewBlock} also {@code false}.
+     * <p/>
      *
      * @param block The {@link Block} to look up and remove.
      * @param cleanupStats Removes connection info and other stats.
+     * @return A list of all removed blocks that either have no parent (i.e., root blocks) or whose
+     *         parents were not removed. Possibly empty if {@code block} is not a root block.
      */
-    private boolean removeRootBlockImpl(Block block, boolean cleanupStats) {
-        boolean rootFoundAndRemoved = mWorkspace.removeRootBlock(block, cleanupStats);
-        if (rootFoundAndRemoved) {
-            BlockView bv = mHelper.getView(block);
+    private List<Block> removeRootBlockImpl(Block block, boolean cleanupStats) {
+        List<Block> removedParents = mWorkspace.removeRootBlock(block, cleanupStats);
+        for (Block removedParent : removedParents) {
+            BlockView bv = mHelper.getView(removedParent);
             if (bv != null) {
                 BlockGroup group = bv.getParentBlockGroup();
                 if (group != null) {
@@ -1341,7 +1345,7 @@ public class BlocklyController {
                 mDragger.removeFromDraggingConnections(block);
             }
         }
-        return rootFoundAndRemoved;
+        return removedParents;
     }
 
     /**

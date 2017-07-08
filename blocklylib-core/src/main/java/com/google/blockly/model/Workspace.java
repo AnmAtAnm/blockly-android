@@ -25,6 +25,9 @@ import com.google.blockly.android.control.NameManager;
 import com.google.blockly.android.control.ProcedureManager;
 import com.google.blockly.android.control.VariableNameManager;
 import com.google.blockly.android.control.WorkspaceStats;
+import com.google.blockly.android.ui.BlockGroup;
+import com.google.blockly.android.ui.BlockView;
+import com.google.blockly.android.ui.InputView;
 import com.google.blockly.utils.BlockLoadingException;
 import com.google.blockly.utils.BlocklyXmlHelper;
 
@@ -32,6 +35,7 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -116,22 +120,56 @@ public class Workspace {
     }
 
     /**
-     * Remove a block from the workspace.
+     * Remove a root block and all descendants from the workspace. If the block or any descendants
+     * are procedure definitions, all caller to that procedure will also be removed.
      *
      * @param block The block block to remove, possibly with descendants attached.
      * @param cleanupStats True if this block is being deleted and its connections and references
      *                     should be removed.
-     * @return True if the block was removed, false otherwise.
+     * @return A list of all removed blocks that either have no parent (i.e., root blocks) or whose
+     *         parents were not removed. Possibly empty if {@code block} is not a root block.
      */
-    public boolean removeRootBlock(Block block, boolean cleanupStats) {
-        boolean foundAndRemoved = mRootBlocks.remove(block);
-        if (foundAndRemoved) {
-            block.setEventWorkspaceId(null);
+    public List<Block> removeRootBlock(Block block, boolean cleanupStats) {
+        if (!isRootBlock(block)) {
+            return Collections.emptyList();
+        }
+
+        List<Block> removedBlocks = new ArrayList<>();
+        List<Block> removedParents = new ArrayList<>();
+        removeRootBlockImpl(block, cleanupStats, removedBlocks, removedParents);
+        return removedParents;
+    }
+
+    private void removeRootBlockImpl(Block rootBlock,
+                                     boolean cleanupStats,
+                                     List<Block> outAllRemovedBlocks,
+                                     List<Block> outRemovedParents) {
+        boolean foundAndRemoved = mRootBlocks.remove(rootBlock);
+        if (!foundAndRemoved) {
+            throw new IllegalStateException("Block is not a root block.");
+        }
+        outRemovedParents.add(rootBlock);
+
+        int index = outAllRemovedBlocks.size();
+        rootBlock.addAllDescendants(outAllRemovedBlocks);
+        while (index < outAllRemovedBlocks.size()) {
+            Block block = outAllRemovedBlocks.get(index);
+            if (ProcedureManager.isDefinition(block)) {
+                Set<Block> procedureCallingBlocks = mProcedureManager.removeProcedure(block);
+                for (Block procedureCall : procedureCallingBlocks) {
+                    // Remove the procedure call, and queue all children for further function
+                    // definitions and cleanup.
+                    extractBlockAsRoot(procedureCall, /* reattachNext */ true);
+                    removeRootBlockImpl(procedureCall, /* cleanupStats */ false,
+                                        outAllRemovedBlocks, outRemovedParents);
+                }
+            }
+            block.setEventWorkspaceId(null);  // Should this be inside the following if block?
             if (cleanupStats) {
                 mStats.cleanupStats(block);
             }
+            ++index;
         }
-        return foundAndRemoved;
     }
 
     /**

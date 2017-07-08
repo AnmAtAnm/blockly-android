@@ -282,6 +282,29 @@ public class Block extends Observable<Block.Observer> {
     }
 
     /**
+     * Adds to <code>outList</code> a depth first ordered list of blocks and child blocks.
+     *
+     * @param outList List of blocks to add to.
+     */
+    public void addAllDescendants(List<Block> outList) {
+        int inputCount = mInputList.size();
+        for (int i = 0; i < inputCount; ++i) {
+            Input input = mInputList.get(i);
+            Block connectedBlock = input.getConnectedBlock();
+            if (connectedBlock != null) {
+                connectedBlock.addAllDescendants(outList);
+            }
+        }
+        if (mNextConnection != null) {
+            Block next = mNextConnection.getTargetBlock();
+            if (next != null) {
+                next.addAllDescendants(outList);
+            }
+        }
+        outList.add(this);
+    }
+
+    /**
      * @return The color this block should be drawn in.
      */
     public int getColor() {
