@@ -159,7 +159,12 @@ public class Workspace {
                 for (Block procedureCall : procedureCallingBlocks) {
                     // Remove the procedure call, and queue all children for further function
                     // definitions and cleanup.
-                    extractBlockAsRoot(procedureCall, /* reattachNext */ true);
+                    if (procedureCall.getPreviousConnection() == null) {
+                        mController.extractBlockAsRoot(procedureCall);
+                    } else {
+                        mController.extractStatementAsRoot(procedureCall);
+
+                    }
                     removeRootBlockImpl(procedureCall, /* cleanupStats */ false,
                                         outAllRemovedBlocks, outRemovedParents);
                 }

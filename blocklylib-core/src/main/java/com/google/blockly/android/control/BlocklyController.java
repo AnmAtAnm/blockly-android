@@ -615,7 +615,9 @@ public class BlocklyController {
 
     /**
      * Takes a block, and adds it to the root blocks, disconnecting previous or output connections,
-     * if previously connected.  No action if the block was already a root block.
+     * if previously connected.
+     * <p/>
+     * No action if the block was already a root block.
      *
      * @param block {@link Block} to extract as a root block in the workspace.
      */
@@ -624,6 +626,29 @@ public class BlocklyController {
             @Override
             public void run() {
                 extractBlockAsRootImpl(block, false);
+            }
+        });
+    }
+
+    /**
+     * Removes a single statement from a sequence/BlockGroup, and adds it to the root blocks,
+     * disconnecting the parent connection. If {@code block} has a previous and and next connection,
+     * the next block will be reconnected to the former parent's next connection.
+     * <p/>
+     * If the block was already a root block, the next block (if any) will also become a root block.
+     * That is, the next block will be disconnected, but will have no parent to reconnect to.
+     *
+     * @param statementBlock {@link Block} to extract as a root block in the workspace.
+     */
+    public void extractStatementAsRoot(final Block statementBlock) {
+        if (statementBlock.getPreviousConnection() == null) {
+            throw new IllegalArgumentException(
+                    "statementBlock does not have a previous connection.");
+        }
+        groupAndFireEvents(new Runnable() {
+            @Override
+            public void run() {
+                extractBlockAsRootImpl(statementBlock, true);
             }
         });
     }
@@ -1278,7 +1303,8 @@ public class BlocklyController {
      */
     private void removeBlockTreeImpl(Block block) {
         extractBlockAsRootImpl(block, false);
-        if (removeRootBlockImpl(block, true)) {
+        List<Block> removedBlocks = removeRootBlockImpl(block, true);
+        if (!removedBlocks.isEmpty()) {
             unlinkViews(block);
             addPendingEvent(new BlocklyEvent.DeleteEvent(getWorkspace().getId(), block));
         }
@@ -1558,17 +1584,19 @@ public class BlocklyController {
     }
 
     /**
-     * Implements {@link #extractBlockAsRoot(Block)}. The following events will be added to the
-     * pending events:
+     * Implements {@link #extractBlockAsRoot(Block)} and {@link #extractStatementAsRoot(Block)}.
+     * The following events will be added to the pending events:
      * <ol>
      *    <li>A move of the block to the workspace if it is not already a root block.</li>
      *    <li>A move of the next block if reattachNext is true and a next block exists.</li>
      * </ol>
      *
      * @param block {@link Block} to extract as a root block in the workspace.
-     * @param reattachNext True to detach the next block if it exists and reattach it to the parent
-     *                 (healing the stack), false to take all following blocks with this one.
+     * @param reattachNext Detach the next block, if it exists, and reattach it to the parent's
+     *                     previous connection (healing the stack). Otherwise, leave the next block
+     *                     connected to the new root block.
      */
+    // TODO: Move model updates to public Workspace method.
     private void extractBlockAsRootImpl(Block block, boolean reattachNext) {
         Block rootBlock = block.getRootBlock();
         if (block == rootBlock) {
